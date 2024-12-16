@@ -5,7 +5,7 @@ open class HTTPResponse<Request: Requestable> {
     public var rawData: Data
     public var parsedData: Request.Data?
 
-    init(
+    public init(
         httpResponse: HTTPURLResponse,
         rawData: Data
     ) {
