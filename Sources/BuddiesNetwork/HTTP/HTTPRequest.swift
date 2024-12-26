@@ -5,7 +5,8 @@ open class HTTPRequest<Request: Requestable> {
 
     open var additionalHeaders: [String: String]
     public var rawRequest: Request
-
+    public var cachePolicy: CachePolicy
+    
     public var requestName: String {
         String(describing: rawRequest.self)
     }
@@ -16,6 +17,7 @@ open class HTTPRequest<Request: Requestable> {
         additionalHeaders: [String: String]
     ) {
         rawRequest = request
+        self.cachePolicy = cachePolicy
         self.additionalHeaders = additionalHeaders
     }
 
