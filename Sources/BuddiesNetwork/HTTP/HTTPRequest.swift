@@ -12,6 +12,7 @@ open class HTTPRequest<Request: Requestable> {
 
     public init(
         request: Request,
+        cachePolicy: CachePolicy,
         additionalHeaders: [String: String]
     ) {
         rawRequest = request

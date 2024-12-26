@@ -3,6 +3,7 @@ import Foundation
 public protocol NetworkTransportProtocol {
     func send<Request>(
         request: Request,
+        cachePolicy: CachePolicy,
         dispatchQueue: DispatchQueue,
         completion: @escaping (Result<Request.Data, Error>) -> Void
     ) where Request: Requestable
@@ -17,12 +18,17 @@ open class DefaultRequestChainNetworkTransport: NetworkTransportProtocol {
 
     public func send<Request>(
         request: Request,
+        cachePolicy: CachePolicy,
         dispatchQueue: DispatchQueue,
         completion: @escaping (Result<Request.Data, Error>) -> Void
     ) where Request: Requestable {
         let chain = makeRequestChain(for: request, dispatchQueue: dispatchQueue)
 
-        let request = HTTPRequest(request: request, additionalHeaders: [:])
+        let request = HTTPRequest(
+            request: request,
+            cachePolicy: cachePolicy,
+            additionalHeaders: [:]
+        )
         chain.kickoff(
             request: request,
             completion: completion
