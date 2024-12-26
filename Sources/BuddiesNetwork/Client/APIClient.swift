@@ -54,7 +54,8 @@ public class APIClient {
         try await withCheckedThrowingContinuation { continuation in
             self.perform(
                 request,
-                dispatchQueue: dispatchQueue
+                dispatchQueue: dispatchQueue, 
+                cachePolicy: cachePolicy
             ) { result in
 
                 switch result {
