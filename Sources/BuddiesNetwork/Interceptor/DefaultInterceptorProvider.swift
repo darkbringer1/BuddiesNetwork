@@ -6,10 +6,8 @@ open class DefaultInterceptorProvider: InterceptorProvider {
     public init(client: URLSessionClient) {
         self.client = client
     }
-
-    open func interceptors(
-        for request: some Requestable
-    ) -> [Interceptor] {
+    
+    open func interceptors<Request: Requestable>(for operation: HTTPOperation<Request>) -> [Interceptor] {
         [
             MaxRetryInterceptor(maxRetry: 3),
             NetworkFetchInterceptor(client: client),

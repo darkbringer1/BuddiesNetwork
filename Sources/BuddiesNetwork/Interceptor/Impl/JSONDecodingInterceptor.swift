@@ -21,14 +21,14 @@ public class JSONDecodingInterceptor: Interceptor {
 
     public func intercept<Request>(
         chain: RequestChain,
-        request: HTTPRequest<Request>,
+        operation: HTTPOperation<Request>,
         response: HTTPResponse<Request>?,
-        completion: @escaping (Result<Request.Data, Error>) -> Void
+        completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
         guard let createdResponse = response else {
             chain.handleErrorAsync(
                 JSONDecodingError.responseNotFound,
-                request: request,
+                operation: operation,
                 response: response,
                 completion: completion
             )
@@ -41,7 +41,7 @@ public class JSONDecodingInterceptor: Interceptor {
             createdResponse.parsedData = data
 
             chain.proceed(
-                request: request,
+                operation: operation,
                 interceptor: self,
                 response: createdResponse,
                 completion: completion
@@ -49,7 +49,7 @@ public class JSONDecodingInterceptor: Interceptor {
         } catch {
             chain.handleErrorAsync(
                 error,
-                request: request,
+                operation: operation,
                 response: response,
                 completion: completion
             )

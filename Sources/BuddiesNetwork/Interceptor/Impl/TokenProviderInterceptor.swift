@@ -21,16 +21,16 @@ open class TokenProviderInterceptor: Interceptor {
 
     open func intercept<Request>(
         chain: RequestChain,
-        request: HTTPRequest<Request>,
+        operation: HTTPOperation<Request>,
         response: HTTPResponse<Request>?,
-        completion: @escaping (Result<Request.Data, Error>) -> Void
+        completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
         if let token = currentToken() {
-            request.addHeader(key: "Authorization", val: "Bearer \(token)")
+            operation.addHeader(key: "Authorization", val: "Bearer \(token)")
         }
 
         chain.proceed(
-            request: request,
+            operation: operation,
             interceptor: self,
             response: response,
             completion: completion

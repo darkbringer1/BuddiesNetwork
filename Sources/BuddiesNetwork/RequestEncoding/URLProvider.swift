@@ -1,10 +1,19 @@
 import Foundation
 
 public enum URLProvider {
+    
+    public static func urlRequest<Request: Requestable>(from properties: HTTPOperation<Request>.HTTPProperties) throws -> URLRequest {
+        try returnUrlRequest(
+            method: properties.httpMethod,
+            url: properties.url,
+            data: properties.data
+        )
+    }
+    
     public static func returnUrlRequest(
         method: HTTPMethod = .get,
         url: URL,
-        data: (some Encodable)?
+        data: (any Encodable)?
     ) throws -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method.rawValue
@@ -32,7 +41,7 @@ public enum URLProvider {
 
     private static func configureEncoding(
         method: HTTPMethod,
-        data: (some Encodable)?,
+        data: (any Encodable)?,
         request: inout URLRequest
     ) throws {
         let params = data?.asDictionary()

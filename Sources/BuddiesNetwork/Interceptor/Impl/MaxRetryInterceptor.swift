@@ -22,16 +22,16 @@ public class MaxRetryInterceptor: Interceptor {
 
     public func intercept<Request>(
         chain: RequestChain,
-        request: HTTPRequest<Request>,
+        operation: HTTPOperation<Request>,
         response: HTTPResponse<Request>?,
-        completion: @escaping (Result<Request.Data, Error>) -> Void
+        completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
         guard currentHit <= maxRetry else {
-            let error = RetryError.exceedRetryLimit(currentHit, request.requestName)
+            let error = RetryError.exceedRetryLimit(currentHit, operation.properties.requestName)
 
             chain.handleErrorAsync(
                 error,
-                request: request,
+                operation: operation,
                 response: response,
                 completion: completion
             )
@@ -42,7 +42,7 @@ public class MaxRetryInterceptor: Interceptor {
         currentHit += 1
 
         chain.proceed(
-            request: request,
+            operation: operation,
             interceptor: self,
             response: response,
             completion: completion

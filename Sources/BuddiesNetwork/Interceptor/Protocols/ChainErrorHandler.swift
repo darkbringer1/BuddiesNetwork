@@ -4,8 +4,8 @@ public protocol ChainErrorHandler {
     func handleError<Request>(
         error: Error,
         chain: RequestChain,
-        request: HTTPRequest<Request>,
+        operation: HTTPOperation<Request>,
         response: HTTPResponse<Request>?,
-        completion: @escaping (Result<Request.Data, Error>) -> Void
+        completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable
 }

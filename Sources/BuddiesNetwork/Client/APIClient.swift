@@ -16,6 +16,25 @@ public enum CachePolicy: Hashable {
     public static var `default`: CachePolicy = .returnCacheDataElseFetch
 }
 
+
+public class HTTPResult<Request: Requestable> {
+    /// Represents source of data
+    public enum Source: Hashable {
+        case cache
+        case server
+    }
+    
+    public let source: Source
+    public let data: Request.Data
+    
+    public init(source: Source, data: Request.Data) {
+        self.source = source
+        self.data = data
+    }
+}
+
+public typealias HTTPResultHandler<Request: Requestable> = (Result<HTTPResult<Request>, Error>) -> Void
+
 public class APIClient {
     public private(set) var networkTransporter: NetworkTransportProtocol
 
@@ -31,14 +50,14 @@ public class APIClient {
 
         self.init(networkTransporter: transporter)
     }
-
+    
     public func perform<Request: Requestable>(
         _ request: Request,
         dispatchQueue: DispatchQueue = .main,
         cachePolicy: CachePolicy = .default,
-        completion: @escaping (Result<Request.Data, Error>) -> Void
-    ) {
-        networkTransporter.send(
+        completion: @escaping HTTPResultHandler<Request>
+    ) -> (any Cancellable)? {
+        return networkTransporter.send(
             request: request,
             cachePolicy: cachePolicy,
             dispatchQueue: dispatchQueue,
@@ -46,21 +65,22 @@ public class APIClient {
         )
     }
 
+
     public func perform<Request: Requestable>(
         _ request: Request,
         cachePolicy: CachePolicy = .default,
         dispatchQueue: DispatchQueue = .main
     ) async throws -> Request.Data {
         try await withCheckedThrowingContinuation { continuation in
-            self.perform(
+          let _ = self.perform(
                 request,
                 dispatchQueue: dispatchQueue, 
                 cachePolicy: cachePolicy
             ) { result in
-
+                
                 switch result {
                 case let .success(success):
-                    continuation.resume(returning: success)
+                    continuation.resume(returning: success.data)
                 case let .failure(error):
                     continuation.resume(throwing: error)
                 }

@@ -13,18 +13,18 @@ public class NetworkFetchInterceptor: Interceptor {
 
     public func intercept<Request>(
         chain: RequestChain,
-        request: HTTPRequest<Request>,
+        operation: HTTPOperation<Request>,
         response: HTTPResponse<Request>?,
-        completion: @escaping (Result<Request.Data, Error>) -> Void
+        completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
         let urlRequest: URLRequest
 
         do {
-            urlRequest = try request.toUrlRequest()
+            urlRequest = try URLProvider.urlRequest(from: operation.properties)
         } catch {
             chain.handleErrorAsync(
                 error,
-                request: request,
+                operation: operation,
                 response: response,
                 completion: completion
             )
@@ -46,7 +46,7 @@ public class NetworkFetchInterceptor: Interceptor {
                 )
 
                 chain.proceed(
-                    request: request,
+                    operation: operation,
                     interceptor: self,
                     response: httpResponse,
                     completion: completion
@@ -54,7 +54,7 @@ public class NetworkFetchInterceptor: Interceptor {
             case let .failure(error):
                 chain.handleErrorAsync(
                     error,
-                    request: request,
+                    operation: operation,
                     response: response,
                     completion: completion
                 )

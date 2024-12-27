@@ -40,15 +40,15 @@ public class NetworkInterceptChain: RequestChain {
     }
 
     public func kickoff<Request>(
-        request: HTTPRequest<Request>,
-        completion: @escaping (Result<Request.Data, Error>) -> Void
+        operation: HTTPOperation<Request>,
+        completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
         assert(currentIndex == 0)
 
         guard let firstInterceptor = interceptors.first else {
             handleErrorAsync(
                 InterceptChainError.interceptorNotFound,
-                request: request,
+                operation: operation,
                 response: nil,
                 completion: completion
             )
@@ -57,15 +57,15 @@ public class NetworkInterceptChain: RequestChain {
 
         firstInterceptor.intercept(
             chain: self,
-            request: request,
+            operation: operation,
             response: nil,
             completion: completion
         )
     }
 
     public func retry<Request>(
-        request: HTTPRequest<Request>,
-        completion: @escaping (Result<Request.Data, Error>) -> Void
+        operation: HTTPOperation<Request>,
+        completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
         guard !isCancelled else {
             return
@@ -73,16 +73,16 @@ public class NetworkInterceptChain: RequestChain {
 
         currentIndex = 0
         kickoff(
-            request: request,
+            operation: operation,
             completion: completion
         )
     }
 
     public func handleErrorAsync<Request>(
         _ error: Error,
-        request: HTTPRequest<Request>,
+        operation: HTTPOperation<Request>,
         response: HTTPResponse<Request>?,
-        completion: @escaping (Result<Request.Data, Error>) -> Void
+        completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
         guard !isCancelled else {
             return
@@ -101,7 +101,7 @@ public class NetworkInterceptChain: RequestChain {
         errorHandler.handleError(
             error: error,
             chain: self,
-            request: request,
+            operation: operation,
             response: response
         ) { result in
             dispatchQueue.async {
@@ -112,9 +112,9 @@ public class NetworkInterceptChain: RequestChain {
 
     public func proceed<Request>(
         interceptorIndex: Int,
-        request: HTTPRequest<Request>,
+        operation: HTTPOperation<Request>,
         response: HTTPResponse<Request>?,
-        completion: @escaping (Result<Request.Data, Error>) -> Void
+        completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
         guard !isCancelled else {
             return
@@ -127,7 +127,7 @@ public class NetworkInterceptChain: RequestChain {
 
             currentInterceptor.intercept(
                 chain: self,
-                request: request,
+                operation: operation,
                 response: response,
                 completion: { result in
                     // Somehow dispatchQueue is dellocated that this doesn't get called unless it's like this.
@@ -139,17 +139,18 @@ public class NetworkInterceptChain: RequestChain {
             )
         } else {
             // If we already have the parsedData, then we can return it.
-            if let result = response?.parsedData {
+            if let parsedData = response?.parsedData {
+                let result = HTTPResult<Request>(source: .server, data: parsedData)
                 returnValue(
-                    for: request,
-                    value: result,
+                    for: operation,
+                    result: result,
                     completion: completion
                 )
             } else {
                 // this means that index is not found on interceptors, and we don't have parsedData.
                 handleErrorAsync(
                     InterceptChainError.interceptorIndexNotFound(interceptorIndex),
-                    request: request,
+                    operation: operation,
                     response: response,
                     completion: completion
                 )
@@ -158,15 +159,15 @@ public class NetworkInterceptChain: RequestChain {
     }
 
     public func proceed<Request>(
-        request: HTTPRequest<Request>,
+        operation: HTTPOperation<Request>,
         interceptor: Interceptor,
         response: HTTPResponse<Request>?,
-        completion: @escaping (Result<Request.Data, Error>) -> Void
+        completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
         guard let interceptorIndex = interceptorIndexes[interceptor.id] else {
             handleErrorAsync(
                 InterceptChainError.interceptorNotFound,
-                request: request,
+                operation: operation,
                 response: response,
                 completion: completion
             )
@@ -177,22 +178,22 @@ public class NetworkInterceptChain: RequestChain {
 
         proceed(
             interceptorIndex: nextIndex,
-            request: request,
+            operation: operation,
             response: response,
             completion: completion
         )
     }
 
     public func returnValue<Request>(
-        for request: HTTPRequest<Request>,
-        value: Request.Data,
-        completion: @escaping (Result<Request.Data, Error>) -> Void
+        for operation: HTTPOperation<Request>,
+        result: HTTPResult<Request>,
+        completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
         guard !isCancelled else {
             return
         }
 
-        completion(.success(value))
+        completion(.success(result))
     }
 
     public func cancel() {
