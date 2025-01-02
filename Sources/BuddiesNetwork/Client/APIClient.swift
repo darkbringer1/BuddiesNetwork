@@ -54,7 +54,7 @@ public class APIClient {
     public func perform<Request: Requestable>(
         _ request: Request,
         dispatchQueue: DispatchQueue = .main,
-        cachePolicy: CachePolicy = .default,
+        cachePolicy: CachePolicy = .fetchIgnoringCacheCompletely,
         completion: @escaping HTTPResultHandler<Request>
     ) -> (any Cancellable)? {
         return networkTransporter.send(
@@ -68,7 +68,7 @@ public class APIClient {
 
     public func perform<Request: Requestable>(
         _ request: Request,
-        cachePolicy: CachePolicy = .default,
+        cachePolicy: CachePolicy = .fetchIgnoringCacheCompletely,
         dispatchQueue: DispatchQueue = .main
     ) async throws -> Request.Data {
         try await withCheckedThrowingContinuation { continuation in
