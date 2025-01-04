@@ -17,7 +17,7 @@ public class NetworkFetchInterceptor: Interceptor {
         response: HTTPResponse<Request>?,
         completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
-        let urlRequest: URLRequest
+        var urlRequest: URLRequest
 
         do {
             urlRequest = try URLProvider.urlRequest(from: operation.properties)
@@ -30,7 +30,11 @@ public class NetworkFetchInterceptor: Interceptor {
             )
             return
         }
-
+        
+        for (fieldName, value) in operation.properties.additionalHeaders {
+            urlRequest.addValue(value, forHTTPHeaderField: fieldName)
+        }
+        
         let task = client.sendRequest(urlRequest) { [weak self] result in
             guard let self else { return }
 

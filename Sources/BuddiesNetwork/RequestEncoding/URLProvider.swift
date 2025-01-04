@@ -6,19 +6,21 @@ public enum URLProvider {
         try returnUrlRequest(
             method: properties.httpMethod,
             url: properties.url,
-            data: properties.data
+            data: properties.data,
+            additionalHeaders: properties.additionalHeaders
         )
     }
     
     public static func returnUrlRequest(
         method: HTTPMethod = .get,
         url: URL,
-        data: (any Encodable)?
+        data: (any Encodable)?,
+        additionalHeaders: [String: String]? = nil
     ) throws -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = method.rawValue
-        request.headers = headers()
-
+        request.headers = headers(additionalHeaders)
+        
         try configureEncoding(
             method: method,
             data: data,
@@ -56,7 +58,7 @@ public enum URLProvider {
         }
     }
 
-    private static func headers() -> HTTPHeaders {
+    private static func headers(_ appendingHeaders: [String: String]?) -> HTTPHeaders {
         var httpHeaders = HTTPHeaders()
 
         httpHeaders.add(
@@ -65,6 +67,16 @@ public enum URLProvider {
                 value: HTTPHeaderFields.accept.value.1
             )
         )
+        if let headers = appendingHeaders {
+            for (fieldName, value) in headers {
+                httpHeaders.add(
+                    HTTPHeader(
+                        name: fieldName,
+                        value: value
+                    )
+                )
+            }
+        }
         return httpHeaders
     }
 }
