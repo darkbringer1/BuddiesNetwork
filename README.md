@@ -169,7 +169,32 @@ You can also inject an `errorHandler` via `additionalErrorHandler(for:)` to cent
 
 ## Authentication Example
 
-Use `TokenProviderInterceptor` to attach a bearer token when available:
+Use `AuthenticatedInterceptorProvider` for a production stack (retry, bearer token, fetch, HTTP status check, JSON decode) plus centralized 401 handling:
+
+```swift
+let transport = DefaultRequestChainNetworkTransport(
+    interceptorProvider: AuthenticatedInterceptorProvider(
+        client: URLSessionClient(sessionConfiguration: .default),
+        accessToken: { Current.session?.accessToken },
+        onUnauthorized: {
+            await Authenticator.shared.logout()
+        }
+    )
+)
+let client = APIClient(networkTransporter: transport)
+```
+
+Pipeline order matches a typical app setup:
+1. `MaxRetryInterceptor(maxRetry: 3)`
+2. `TokenProviderInterceptor`
+3. `NetworkFetchInterceptor`
+4. `HTTPStatusCheckerInterceptor`
+5. `JSONDecodingInterceptor`
+
+`AuthenticationErrorHandler` runs on chain errors; when the response status is `401`, it invokes `onUnauthorized`, cancels the chain, and fails the request.
+
+For manual composition, use `TokenProviderInterceptor` directly:
+
 ```swift
 let tokenInterceptor = TokenProviderInterceptor { Current.session?.accessToken }
 
@@ -179,6 +204,7 @@ struct ProviderWithToken: InterceptorProvider {
         [
             tokenInterceptor,
             NetworkFetchInterceptor(client: client),
+            HTTPStatusCheckerInterceptor(),
             JSONDecodingInterceptor()
         ]
     }
@@ -227,7 +253,61 @@ struct CityRequest: Requestable {
 Common errors are surfaced as `NetworkError` (e.g., `encodingFailed`, `missingURL`). You can map or recover from errors centrally by providing a custom `ChainErrorHandler` in your `InterceptorProvider`.
 
 
+## Mocking (Offline / UI Development)
+
+Use `MockInterceptorProvider` instead of `DefaultInterceptorProvider` to short-circuit the network and return fixture data from your requests.
+
+### 1) Conform your request to `Mockable`
+
+```swift
+struct LoginRequest: Requestable, Mockable {
+    let email: String
+
+    struct Data: Decodable {
+        struct User: Decodable {
+            let id: Int
+            let name: String
+            let email: String
+        }
+        let user: User?
+    }
+
+    func httpProperties() -> HTTPOperation<Self>.HTTPProperties {
+        .init(
+            url: URL(string: "https://api.example.com/v1/login")!,
+            httpMethod: .post,
+            data: self
+        )
+    }
+
+    func mock() -> Self.Data {
+        .init(
+            user: .init(
+                id: 123,
+                name: "Can Yoldas",
+                email: email
+            )
+        )
+    }
+}
+```
+
+### 2) Wire the mock provider
+
+```swift
+let transport = DefaultRequestChainNetworkTransport(
+    interceptorProvider: MockInterceptorProvider(responseDelaySeconds: 1 ... 2)
+)
+let client = APIClient(networkTransporter: transport)
+
+let login = try await client.perform(LoginRequest(email: "dev@example.com"))
+```
+
+Requests that do not conform to `Mockable` fail the chain with a descriptive error. Optional `responseDelaySeconds` simulates network latency (default `1...2` seconds).
+
+
 ## Testing Tips
+- Use `MockInterceptorProvider` for deterministic fixture responses without hitting the network.
 - Inject a custom `InterceptorProvider` that uses a stub interceptor to return fixture data without hitting the network.
 - Replace `URLSessionClient` with a specialized client to simulate errors, delays, or data races.
 
