@@ -1,7 +1,14 @@
 import Foundation
+import Synchronization
 
-open class URLSessionClient: NSObject, URLSessionDelegate, URLSessionDataDelegate {
-    public typealias Completion = (Result<(Data, HTTPURLResponse), Error>) -> Void
+public final class URLSessionClient: NSObject, URLSessionDelegate, URLSessionDataDelegate {
+    public typealias Completion = @Sendable (Result<(Data, HTTPURLResponse), any Error>) -> Void
+
+    private struct State {
+        var hasBeenInvalidated = false
+        var tasks: [Int: TaskData] = [:]
+        var session: URLSession?
+    }
 
     enum URLSessionError: Error, LocalizedError {
         case sessionInvalidated
@@ -15,9 +22,12 @@ open class URLSessionClient: NSObject, URLSessionDelegate, URLSessionDataDelegat
         }
     }
 
-    @Atomic private var hasBeenInvalidated: Bool = false
-    @Atomic private var tasks: [Int: TaskData] = [:]
-    open private(set) var session: URLSession!
+    private let state = Mutex(State())
+
+    public private(set) var session: URLSession! {
+        get { state.withLock { $0.session } }
+        set { state.withLock { $0.session = newValue } }
+    }
 
     public init(
         sessionConfiguration: URLSessionConfiguration,
@@ -33,50 +43,47 @@ open class URLSessionClient: NSObject, URLSessionDelegate, URLSessionDataDelegat
     }
 
     @discardableResult
-    open func sendRequest(_ request: URLRequest,
+    public func sendRequest(_ request: URLRequest,
                           completion: @escaping Completion) -> URLSessionTask? {
-        guard !hasBeenInvalidated else {
+        guard !state.withLock({ $0.hasBeenInvalidated }) else {
+            completion(.failure(URLSessionError.sessionInvalidated))
+            return nil
+        }
+
+        guard let session else {
             completion(.failure(URLSessionError.sessionInvalidated))
             return nil
         }
 
         let task = session.dataTask(with: request)
         let taskData = TaskData(completionBlock: completion)
-        $tasks.mutate { $0[task.taskIdentifier] = taskData }
+        state.withLock { $0.tasks[task.taskIdentifier] = taskData }
 
         task.resume()
         return task
     }
 
     public func invalidate() {
-        $hasBeenInvalidated.mutate { $0 = true }
-        func cleanup() {
-            self.session = nil
-            clearAllTasks()
+        let session = state.withLock {
+            $0.hasBeenInvalidated = true
+            let session = $0.session
+            $0.session = nil
+            $0.tasks.removeAll()
+            return session
         }
 
-        guard let session else {
-            cleanup()
-            return
-        }
-
-        session.invalidateAndCancel()
-        cleanup()
+        session?.invalidateAndCancel()
     }
 
-    open func clear(task identifier: Int) {
-        $tasks.mutate { _ = $0.removeValue(forKey: identifier) }
+    public func clear(task identifier: Int) {
+        state.withLock { _ = $0.tasks.removeValue(forKey: identifier) }
     }
 
-    open func clearAllTasks() {
-        guard !tasks.isEmpty else {
-            return
-        }
-
-        $tasks.mutate { $0.removeAll() }
+    public func clearAllTasks() {
+        state.withLock { $0.tasks.removeAll() }
     }
 
-    open func urlSession(
+    public func urlSession(
         _ session: URLSession,
         dataTask: URLSessionDataTask,
         didReceive data: Data
@@ -86,7 +93,7 @@ open class URLSessionClient: NSObject, URLSessionDelegate, URLSessionDataDelegat
             return
         }
 
-        guard let taskData = tasks[dataTask.taskIdentifier] else {
+        guard let taskData = state.withLock({ $0.tasks[dataTask.taskIdentifier] }) else {
             assertionFailure("No data found for task \(dataTask.taskIdentifier), cannot append received data")
             return
         }
@@ -94,14 +101,14 @@ open class URLSessionClient: NSObject, URLSessionDelegate, URLSessionDataDelegat
         taskData.append(additionalData: data)
     }
 
-    open func urlSession(
+    public func urlSession(
         _ session: URLSession,
         task: URLSessionTask,
         didCompleteWithError error: Error?
     ) {
         defer { self.clear(task: task.taskIdentifier) }
 
-        guard let taskData = tasks[task.taskIdentifier] else {
+        guard let taskData = state.withLock({ $0.tasks[task.taskIdentifier] }) else {
             // This means that task is already cancelled or cleaned, time to return.
             return
         }
@@ -123,14 +130,14 @@ open class URLSessionClient: NSObject, URLSessionDelegate, URLSessionDataDelegat
         }
     }
 
-    open func urlSession(_ session: URLSession,
+    public func urlSession(_ session: URLSession,
                          dataTask: URLSessionDataTask,
                          willCacheResponse proposedResponse: CachedURLResponse,
                          completionHandler: @escaping (CachedURLResponse?) -> Void) {
         completionHandler(proposedResponse)
     }
 
-    open func urlSession(_ session: URLSession,
+    public func urlSession(_ session: URLSession,
                          dataTask: URLSessionDataTask,
                          didReceive response: URLResponse,
                          completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
@@ -138,12 +145,10 @@ open class URLSessionClient: NSObject, URLSessionDelegate, URLSessionDataDelegat
             completionHandler(.allow)
         }
 
-        $tasks.mutate {
-            guard let taskData = $0[dataTask.taskIdentifier] else {
-                return
-            }
-
-            taskData.responseReceived(response: response)
+        guard let taskData = state.withLock({ $0.tasks[dataTask.taskIdentifier] }) else {
+            return
         }
+
+        taskData.responseReceived(response: response)
     }
 }

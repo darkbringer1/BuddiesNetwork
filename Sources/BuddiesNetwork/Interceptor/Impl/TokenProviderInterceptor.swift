@@ -1,6 +1,6 @@
 import Foundation
 
-open class TokenProviderInterceptor: Interceptor {
+public final class TokenProviderInterceptor: Interceptor {
     enum TokenProviderError: Error, LocalizedError {
         case tokenNotFound
 
@@ -11,15 +11,15 @@ open class TokenProviderInterceptor: Interceptor {
         }
     }
 
-    public var id: String = UUID().uuidString
+    public let id: String = UUID().uuidString
 
-    var currentToken: () -> String?
+    private let currentToken: @Sendable () -> String?
 
-    public init(currentToken: @escaping () -> String?) {
+    public init(currentToken: @escaping @Sendable () -> String?) {
         self.currentToken = currentToken
     }
 
-    open func intercept<Request>(
+    public func intercept<Request>(
         chain: RequestChain,
         operation: HTTPOperation<Request>,
         response: HTTPResponse<Request>?,

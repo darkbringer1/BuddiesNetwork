@@ -15,7 +15,7 @@ public final class HTTPStatusCheckerInterceptor: Interceptor {
         }
     }
 
-    public var id: String = UUID().uuidString
+    public let id: String = UUID().uuidString
 
     public let acceptableStatusCodes: Range<Int>
 

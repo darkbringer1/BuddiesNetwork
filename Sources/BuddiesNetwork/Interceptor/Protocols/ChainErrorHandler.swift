@@ -1,6 +1,6 @@
 import Foundation
 
-public protocol ChainErrorHandler {
+public protocol ChainErrorHandler: Sendable {
     func handleError<Request>(
         error: Error,
         chain: RequestChain,

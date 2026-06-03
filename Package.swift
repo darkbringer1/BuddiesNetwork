@@ -1,4 +1,4 @@
-// swift-tools-version: 5.10
+// swift-tools-version: 6.0
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -6,7 +6,7 @@ import PackageDescription
 /// Credits to Can Yoldas  https://github.com/canyoldas0
 let package = Package(
     name: "BuddiesNetwork",
-    platforms: [.iOS(.v17), .macOS(.v14)],
+    platforms: [.iOS(.v18), .macOS(.v15)],
     products: [
         // Products define the executables and libraries a package produces, making them visible to other packages.
         .library(
@@ -21,5 +21,6 @@ let package = Package(
         .testTarget(
             name: "BuddiesNetworkTests",
             dependencies: ["BuddiesNetwork"]),
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

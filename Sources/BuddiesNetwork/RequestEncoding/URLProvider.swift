@@ -14,7 +14,7 @@ public enum URLProvider {
     public static func returnUrlRequest(
         method: HTTPMethod = .get,
         url: URL,
-        data: (any Encodable)?,
+        data: (any Encodable & Sendable)?,
         additionalHeaders: [String: String]? = nil
     ) throws -> URLRequest {
         var request = URLRequest(url: url)
@@ -43,7 +43,7 @@ public enum URLProvider {
 
     private static func configureEncoding(
         method: HTTPMethod,
-        data: (any Encodable)?,
+        data: (any Encodable & Sendable)?,
         request: inout URLRequest
     ) throws {
         let params = data?.asDictionary()
@@ -81,4 +81,4 @@ public enum URLProvider {
     }
 }
 
-public struct EmptyEncodable: Encodable {}
+public struct EmptyEncodable: Encodable, Sendable {}

@@ -1,6 +1,12 @@
 import Foundation
+import Synchronization
 
-public class NetworkInterceptChain: RequestChain {
+public final class NetworkInterceptChain: RequestChain {
+    private struct State {
+        var currentIndex = 0
+        var isCancelled = false
+    }
+
     public enum InterceptChainError: Error, LocalizedError {
         case interceptorNotFound
         case interceptorIndexNotFound(Int)
@@ -14,36 +20,39 @@ public class NetworkInterceptChain: RequestChain {
     }
 
     // MARK: Public
-    public var interceptors: [Interceptor]
-    public var errorHandler: ChainErrorHandler?
+    public let interceptors: [any Interceptor]
+    public let errorHandler: (any ChainErrorHandler)?
 
-    @Atomic public var isCancelled: Bool = false
+    public var isCancelled: Bool {
+        state.withLock { $0.isCancelled }
+    }
 
     // MARK: Private
-    private var currentIndex: Int
-    private var interceptorIndexes: [String: Int] = [:]
-    private var dispatchQueue: DispatchQueue
+    private let state = Mutex(State())
+    private let interceptorIndexes: [String: Int]
+    private let dispatchQueue: DispatchQueue
 
     public init(
-        interceptors: [Interceptor],
+        interceptors: [any Interceptor],
         dispatchQueue: DispatchQueue = .main,
-        errorHandler: ChainErrorHandler? = nil
+        errorHandler: (any ChainErrorHandler)? = nil
     ) {
         self.interceptors = interceptors
         self.errorHandler = errorHandler
         self.dispatchQueue = dispatchQueue
-        currentIndex = 0
 
+        var interceptorIndexes: [String: Int] = [:]
         for (index, interceptor) in interceptors.enumerated() {
             interceptorIndexes[interceptor.id] = index
         }
+        self.interceptorIndexes = interceptorIndexes
     }
 
     public func kickoff<Request>(
         operation: HTTPOperation<Request>,
         completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
-        assert(currentIndex == 0)
+        assert(state.withLock { $0.currentIndex } == 0)
 
         guard let firstInterceptor = interceptors.first else {
             handleErrorAsync(
@@ -71,7 +80,7 @@ public class NetworkInterceptChain: RequestChain {
             return
         }
 
-        currentIndex = 0
+        state.withLock { $0.currentIndex = 0 }
         kickoff(
             operation: operation,
             completion: completion
@@ -121,9 +130,9 @@ public class NetworkInterceptChain: RequestChain {
         }
 
         if interceptors.indices.contains(interceptorIndex) {
-            currentIndex = interceptorIndex
+            state.withLock { $0.currentIndex = interceptorIndex }
 
-            let currentInterceptor = interceptors[currentIndex]
+            let currentInterceptor = interceptors[interceptorIndex]
 
             currentInterceptor.intercept(
                 chain: self,
@@ -160,7 +169,7 @@ public class NetworkInterceptChain: RequestChain {
 
     public func proceed<Request>(
         operation: HTTPOperation<Request>,
-        interceptor: Interceptor,
+        interceptor: any Interceptor,
         response: HTTPResponse<Request>?,
         completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
@@ -201,7 +210,7 @@ public class NetworkInterceptChain: RequestChain {
             return
         }
 
-        $isCancelled.mutate { $0 = true }
+        state.withLock { $0.isCancelled = true }
 
         for interceptor in interceptors {
             if let cancellableInterceptor = interceptor as? Cancellable {

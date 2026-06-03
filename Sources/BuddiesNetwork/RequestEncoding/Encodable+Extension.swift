@@ -4,7 +4,7 @@ extension Encodable {
     func asDictionary() -> Parameters {
         do {
             let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .formatted(CodableDateFormatter.outgoingDateFormatter)
+            encoder.dateEncodingStrategy = .formatted(CodableDateFormatter.outgoingDateFormatter())
             let data = try encoder.encode(self)
 
             return try JSONSerialization.jsonObject(with: data, options: .allowFragments) as? [String: Any] ?? [:]
@@ -30,16 +30,16 @@ extension Encodable {
 
 // TODO: Make injection on this.
 enum CodableDateFormatter {
-    static let dateFormatter: DateFormatter = {
+    static func dateFormatter() -> DateFormatter {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
 
         return formatter
-    }()
+    }
 
-    static let outgoingDateFormatter: DateFormatter = {
+    static func outgoingDateFormatter() -> DateFormatter {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter
-    }()
+    }
 }

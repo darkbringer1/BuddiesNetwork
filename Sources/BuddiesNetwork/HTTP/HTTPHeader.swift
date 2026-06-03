@@ -1,6 +1,6 @@
 import Foundation
 
-public struct HTTPHeader: Hashable {
+public struct HTTPHeader: Hashable, Sendable {
     public let name: String
     public let value: String
 

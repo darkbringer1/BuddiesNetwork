@@ -1,6 +1,7 @@
 import Foundation
+import Synchronization
 
-public class JSONDecodingInterceptor: Interceptor {
+public final class JSONDecodingInterceptor: Interceptor {
     enum JSONDecodingError: Error, LocalizedError {
         case responseNotFound
 
@@ -11,12 +12,12 @@ public class JSONDecodingInterceptor: Interceptor {
         }
     }
 
-    public var id: String = UUID().uuidString
+    public let id: String = UUID().uuidString
 
-    open var decoder: JSONDecoder
+    private let decoder: Mutex<JSONDecoder>
 
     public init(decoder: JSONDecoder = .init()) {
-        self.decoder = decoder
+        self.decoder = Mutex(decoder)
     }
 
     public func intercept<Request>(
@@ -25,7 +26,7 @@ public class JSONDecodingInterceptor: Interceptor {
         response: HTTPResponse<Request>?,
         completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
-        guard let createdResponse = response else {
+        guard var createdResponse = response else {
             chain.handleErrorAsync(
                 JSONDecodingError.responseNotFound,
                 operation: operation,
@@ -36,7 +37,9 @@ public class JSONDecodingInterceptor: Interceptor {
         }
 
         do {
-            let data = try decoder.decode(Request.Data.self, from: createdResponse.rawData)
+            let data = try decoder.withLock {
+                try $0.decode(Request.Data.self, from: createdResponse.rawData)
+            }
 
             createdResponse.parsedData = data
 

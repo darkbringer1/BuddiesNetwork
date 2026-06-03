@@ -1,10 +1,11 @@
 import Foundation
+import Synchronization
 
 struct MapRequestable: Requestable {
     
     let id: String
     
-    struct Data: Decodable { }
+    struct Data: Decodable, Sendable { }
     
     func httpProperties() -> HTTPOperation<Self>.HTTPProperties {
         .init(
@@ -17,19 +18,19 @@ struct MapRequestable: Requestable {
 }
 
 
-open class HTTPOperation<Request: Requestable> {
+public final class HTTPOperation<Request: Requestable>: Sendable {
     
-    public struct HTTPProperties {
+    public struct HTTPProperties: Sendable {
         let url: URL
         let httpMethod: HTTPMethod
         var additionalHeaders: [String: String]
-        let data: (any Encodable)?
+        let data: (any Encodable & Sendable)?
         
         public var requestName: String {
             String(describing: Request.self)
         }
         
-        public init(url: URL, httpMethod: HTTPMethod, additionalHeaders: [String : String] = [:], data: (any Encodable)? = nil) {
+        public init(url: URL, httpMethod: HTTPMethod, additionalHeaders: [String : String] = [:], data: (any Encodable & Sendable)? = nil) {
             self.url = url
             self.httpMethod = httpMethod
             self.additionalHeaders = additionalHeaders
@@ -37,16 +38,20 @@ open class HTTPOperation<Request: Requestable> {
         }
     }
     
-    public var rawRequest: Request
-    public var properties: HTTPProperties
+    public let rawRequest: Request
+    private let propertiesStorage: Mutex<HTTPProperties>
     public let cachePolicy: CachePolicy
+
+    public var properties: HTTPProperties {
+        propertiesStorage.withLock { $0 }
+    }
     
     public init(
         request: Request,
         cachePolicy: CachePolicy
     ) {
-        self.rawRequest = request
-        self.properties = request.httpProperties()
+        rawRequest = request
+        propertiesStorage = Mutex(request.httpProperties())
         self.cachePolicy = cachePolicy
     }
     
@@ -61,7 +66,9 @@ open class HTTPOperation<Request: Requestable> {
 //    }
 
     public func addHeader(key: String, val: String) {
-        properties.additionalHeaders[key] = val
+        propertiesStorage.withLock {
+            $0.additionalHeaders[key] = val
+        }
     }
 }
 //
@@ -101,8 +108,8 @@ open class HTTPOperation<Request: Requestable> {
 //    }
 //}
 
-public protocol Requestable: Encodable {
-    associatedtype Data: Decodable
+public protocol Requestable: Encodable, Sendable {
+    associatedtype Data: Decodable & Sendable
 
 //    func toUrlRequest() throws -> URLRequest
     func httpProperties() -> HTTPOperation<Self>.HTTPProperties

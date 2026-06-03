@@ -1,22 +1,22 @@
 import Foundation
 
 /// Production interceptor stack with retry, auth token injection, network fetch, status validation, and JSON decoding.
-open class AuthenticatedInterceptorProvider: InterceptorProvider {
+public final class AuthenticatedInterceptorProvider: InterceptorProvider {
     public let client: URLSessionClient
-    public var currentToken: () -> String?
-    public let onUnauthorized: @Sendable () async -> Void
+    public let currentToken: @Sendable () -> String?
+    public let onUnauthorized: @MainActor @Sendable () async -> Void
 
     public init(
         client: URLSessionClient,
-        accessToken: @escaping () -> String?,
-        onUnauthorized: @escaping @Sendable () async -> Void = {}
+        accessToken: @escaping @Sendable () -> String?,
+        onUnauthorized: @escaping @MainActor @Sendable () async -> Void = {}
     ) {
         self.client = client
         self.currentToken = accessToken
         self.onUnauthorized = onUnauthorized
     }
 
-    open func interceptors<Request: Requestable>(for operation: HTTPOperation<Request>) -> [Interceptor] {
+    public func interceptors<Request: Requestable>(for operation: HTTPOperation<Request>) -> [any Interceptor] {
         [
             MaxRetryInterceptor(maxRetry: 3),
             TokenProviderInterceptor(currentToken: currentToken),
@@ -26,7 +26,7 @@ open class AuthenticatedInterceptorProvider: InterceptorProvider {
         ]
     }
 
-    open func additionalErrorHandler<Request: Requestable>(for operation: HTTPOperation<Request>) -> ChainErrorHandler? {
+    public func additionalErrorHandler<Request: Requestable>(for operation: HTTPOperation<Request>) -> (any ChainErrorHandler)? {
         AuthenticationErrorHandler(onUnauthorized: onUnauthorized)
     }
 }

@@ -1,8 +1,8 @@
 import Foundation
 
-open class HTTPResponse<Request: Requestable> {
-    public var httpResponse: HTTPURLResponse
-    public var rawData: Data
+public struct HTTPResponse<Request: Requestable>: Sendable {
+    public let httpResponse: HTTPURLResponse
+    public let rawData: Data
     public var parsedData: Request.Data?
 
     public init(

@@ -1,8 +1,8 @@
 import Foundation
 
 public protocol RequestChain: AnyObject, Cancellable {
-    var interceptors: [Interceptor] { get set }
-    var errorHandler: ChainErrorHandler? { get }
+    var interceptors: [any Interceptor] { get }
+    var errorHandler: (any ChainErrorHandler)? { get }
     var isCancelled: Bool { get }
 
     func kickoff<Request>(

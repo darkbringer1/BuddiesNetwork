@@ -12,20 +12,21 @@ A lightweight, interceptor-driven HTTP networking library for Swift. It offers a
 
 
 ## Requirements
-- iOS 17+, macOS 14+
-- Swift 5.10+
+- iOS 18+, macOS 15+
+- Swift 6.0+
+- Swift 6 language mode
 
 
 ## Installation
 Add BuddiesNetwork to your `Package.swift`:
 
 ```swift
-// swift-tools-version: 5.10
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
     name: "YourApp",
-    platforms: [.iOS(.v17), .macOS(.v14)],
+    platforms: [.iOS(.v18), .macOS(.v15)],
     dependencies: [
         .package(url: "https://github.com/your-org/BuddiesNetwork.git", from: "0.1.0")
     ],
@@ -52,7 +53,7 @@ Conform to `Requestable`. You specify the response `Data` type and return HTTP p
 import BuddiesNetwork
 
 struct GetUserRequest: Requestable {
-    struct Data: Decodable { let id: String; let name: String }
+    struct Data: Decodable, Sendable { let id: String; let name: String }
 
     let userId: String
 
@@ -68,7 +69,8 @@ struct GetUserRequest: Requestable {
 ```
 
 Notes:
-- `data` is any `Encodable`. Encoding strategy is automatic:
+- `Requestable` conforms to `Sendable`, and `Requestable.Data` must be `Decodable & Sendable`.
+- `data` is any `Encodable & Sendable`. Encoding strategy is automatic:
   - `.get` → URL query params
   - `.post`/`.put` → JSON body
 - `additionalHeaders` merges into request headers (e.g., custom content types).
@@ -105,10 +107,10 @@ _ = cancellable
 - `DefaultRequestChainNetworkTransport`: Implements a chain-of-responsibility request pipeline using `RequestChain`.
 - `RequestChain`/`NetworkInterceptChain`: Drives interceptors, retries, error handling, and completion dispatch.
 - `Interceptor`: Units of work (e.g., retry, fetch, decode). Interceptors can be cancellable.
-- `URLSessionClient`: Minimal wrapper over `URLSession` with task bookkeeping.
-- `Requestable`: A request model (Encodable) with an associated `Data: Decodable` response.
-- `HTTPOperation`: Holds request metadata (URL, method, headers, payload) and cache policy.
-- `HTTPResponse`: Captures the raw `HTTPURLResponse`, raw `Data`, and decoded `parsedData`.
+- `URLSessionClient`: Minimal final wrapper over `URLSession` with synchronized task bookkeeping.
+- `Requestable`: A `Sendable` request model (`Encodable`) with an associated `Data: Decodable & Sendable` response.
+- `HTTPOperation`: Holds request metadata (URL, method, headers, payload) and cache policy, with mutable headers synchronized for interceptor use.
+- `HTTPResponse`: A Sendable value type containing the raw `HTTPURLResponse`, raw `Data`, and decoded `parsedData`.
 
 Default interceptor pipeline provided by `DefaultInterceptorProvider`:
 1. `MaxRetryInterceptor(maxRetry: 3)`
@@ -121,10 +123,10 @@ Default interceptor pipeline provided by `DefaultInterceptorProvider`:
 Create your own interceptor by conforming to `Interceptor`:
 ```swift
 final class LoggingInterceptor: Interceptor {
-    var id = UUID().uuidString
+    let id = UUID().uuidString
 
     func intercept<Request>(
-        chain: RequestChain,
+        chain: any RequestChain,
         operation: HTTPOperation<Request>,
         response: HTTPResponse<Request>?,
         completion: @escaping HTTPResultHandler<Request>
@@ -140,7 +142,7 @@ Provide a custom `InterceptorProvider` to control the chain:
 struct MyProvider: InterceptorProvider {
     let client: URLSessionClient
 
-    func interceptors<Request: Requestable>(for operation: HTTPOperation<Request>) -> [Interceptor] {
+    func interceptors<Request: Requestable>(for operation: HTTPOperation<Request>) -> [any Interceptor] {
         [
             LoggingInterceptor(),
             MaxRetryInterceptor(maxRetry: 2),
@@ -176,7 +178,7 @@ let transport = DefaultRequestChainNetworkTransport(
     interceptorProvider: AuthenticatedInterceptorProvider(
         client: URLSessionClient(sessionConfiguration: .default),
         accessToken: { Current.session?.accessToken },
-        onUnauthorized: {
+        onUnauthorized: { @MainActor in
             await Authenticator.shared.logout()
         }
     )
@@ -200,7 +202,7 @@ let tokenInterceptor = TokenProviderInterceptor { Current.session?.accessToken }
 
 struct ProviderWithToken: InterceptorProvider {
     let client: URLSessionClient
-    func interceptors<Request: Requestable>(for operation: HTTPOperation<Request>) -> [Interceptor] {
+    func interceptors<Request: Requestable>(for operation: HTTPOperation<Request>) -> [any Interceptor] {
         [
             tokenInterceptor,
             NetworkFetchInterceptor(client: client),
@@ -214,10 +216,14 @@ struct ProviderWithToken: InterceptorProvider {
 
 ## Cancellation and Concurrency
 - Chains and some interceptors implement `Cancellable`. If your transport returns a cancellable token, keep and cancel it as needed.
+- BuddiesNetwork builds in Swift 6 language mode and exposes Sendable-safe APIs.
+- Request, response, result, header, method, transport, provider, interceptor, and cancellable boundaries are Sendable.
+- Mutable request-chain state is synchronized with Swift's `Synchronization.Mutex`; the package does not rely on `@unchecked Sendable`.
+- Completion handlers and token providers are `@Sendable`. Authentication unauthorized handlers are `@MainActor @Sendable`.
 - Async/await API:
   - `try await client.perform(request)` returns `Request.Data`.
 - Callback API:
-  - `client.perform(request, completion:)` yields `Result<HTTPResult<Request>, Error>`; access `httpResult.data` for the decoded payload.
+  - `client.perform(request, completion:)` yields `Result<HTTPResult<Request>, any Error>`; access `httpResult.data` for the decoded payload.
 
 
 ## Cache Policy
@@ -236,7 +242,7 @@ struct CityRequest: Requestable {
     @EncoderIgnorable var countryCode: String
     let subway: Bool
 
-    struct Data: Decodable { /* ... */ }
+    struct Data: Decodable, Sendable { /* ... */ }
 
     func httpProperties() -> HTTPOperation<Self>.HTTPProperties {
         .init(
@@ -263,8 +269,8 @@ Use `MockInterceptorProvider` instead of `DefaultInterceptorProvider` to short-c
 struct LoginRequest: Requestable, Mockable {
     let email: String
 
-    struct Data: Decodable {
-        struct User: Decodable {
+    struct Data: Decodable, Sendable {
+        struct User: Decodable, Sendable {
             let id: Int
             let name: String
             let email: String
@@ -309,7 +315,7 @@ Requests that do not conform to `Mockable` fail the chain with a descriptive err
 ## Testing Tips
 - Use `MockInterceptorProvider` for deterministic fixture responses without hitting the network.
 - Inject a custom `InterceptorProvider` that uses a stub interceptor to return fixture data without hitting the network.
-- Replace `URLSessionClient` with a specialized client to simulate errors, delays, or data races.
+- Inject a custom `NetworkTransportProtocol` or interceptor to simulate errors, delays, cancellation, or decoding behavior.
 
 
 ## License

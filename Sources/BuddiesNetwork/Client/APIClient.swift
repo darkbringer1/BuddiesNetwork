@@ -1,6 +1,6 @@
 import Foundation
 
-public enum CachePolicy: Hashable {
+public enum CachePolicy: Hashable, Sendable {
     /// Return data from the cache if available, else fetch results from the server.
     case returnCacheDataElseFetch
     ///  Always fetch results from the server.
@@ -13,13 +13,13 @@ public enum CachePolicy: Hashable {
     case returnCacheDataAndFetch
     
     /// The current default cache policy.
-    public static var `default`: CachePolicy = .returnCacheDataElseFetch
+    public static let `default`: CachePolicy = .returnCacheDataElseFetch
 }
 
 
-public class HTTPResult<Request: Requestable> {
+public struct HTTPResult<Request: Requestable>: Sendable {
     /// Represents source of data
-    public enum Source: Hashable {
+    public enum Source: Hashable, Sendable {
         case cache
         case server
     }
@@ -33,13 +33,13 @@ public class HTTPResult<Request: Requestable> {
     }
 }
 
-public typealias HTTPResultHandler<Request: Requestable> = (Result<HTTPResult<Request>, Error>) -> Void
+public typealias HTTPResultHandler<Request: Requestable> = @Sendable (Result<HTTPResult<Request>, any Error>) -> Void
 
-public class APIClient {
-    public private(set) var networkTransporter: NetworkTransportProtocol
+public final class APIClient: Sendable {
+    public let networkTransporter: any NetworkTransportProtocol
 
     public init(
-        networkTransporter: NetworkTransportProtocol
+        networkTransporter: any NetworkTransportProtocol
     ) {
         self.networkTransporter = networkTransporter
     }

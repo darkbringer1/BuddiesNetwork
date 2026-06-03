@@ -1,7 +1,7 @@
 import Foundation
 
-public protocol Interceptor {
-    var id: String { get set }
+public protocol Interceptor: AnyObject, Sendable {
+    var id: String { get }
 
     func intercept<Request>(
         chain: RequestChain,
@@ -11,6 +11,6 @@ public protocol Interceptor {
     ) where Request: Requestable
 }
 
-public protocol Cancellable {
+public protocol Cancellable: Sendable {
     func cancel()
 }

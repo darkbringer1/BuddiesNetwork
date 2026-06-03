@@ -1,11 +1,12 @@
 import Foundation
+import Synchronization
 
-public class NetworkFetchInterceptor: Interceptor {
-    public var id: String = UUID().uuidString
+public final class NetworkFetchInterceptor: Interceptor {
+    public let id: String = UUID().uuidString
 
-    @Atomic var currentTask: URLSessionTask?
+    private let currentTask = Mutex<URLSessionTask?>(nil)
 
-    let client: URLSessionClient
+    private let client: URLSessionClient
 
     public init(client: URLSessionClient) {
         self.client = client
@@ -61,11 +62,11 @@ public class NetworkFetchInterceptor: Interceptor {
             }
         }
 
-        $currentTask.mutate { $0 = task }
+        currentTask.withLock { $0 = task }
     }
 
     public func cancel() {
-        guard let task = currentTask else {
+        guard let task = currentTask.withLock({ $0 }) else {
             return
         }
 

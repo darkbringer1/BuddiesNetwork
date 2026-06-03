@@ -2,9 +2,9 @@ import Foundation
 
 /// Handles HTTP 401 responses by running a logout (or session reset) hook and cancelling the chain.
 public final class AuthenticationErrorHandler: ChainErrorHandler {
-    private let onUnauthorized: @Sendable () async -> Void
+    private let onUnauthorized: @MainActor @Sendable () async -> Void
 
-    public init(onUnauthorized: @escaping @Sendable () async -> Void) {
+    public init(onUnauthorized: @escaping @MainActor @Sendable () async -> Void) {
         self.onUnauthorized = onUnauthorized
     }
 
@@ -16,6 +16,7 @@ public final class AuthenticationErrorHandler: ChainErrorHandler {
         completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
         if response?.httpResponse.statusCode == 401 {
+            let onUnauthorized = onUnauthorized
             Task { @MainActor in
                 await onUnauthorized()
                 chain.cancel()

@@ -1,6 +1,6 @@
 import Foundation
 
-public struct HTTPHeaders {
+public struct HTTPHeaders: Sendable {
     private var headers: [HTTPHeader] = []
 
     public init() {}

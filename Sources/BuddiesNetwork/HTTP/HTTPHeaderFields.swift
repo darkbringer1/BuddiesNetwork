@@ -1,6 +1,6 @@
 import Foundation
 
-public enum HTTPHeaderFields {
+public enum HTTPHeaderFields: Sendable {
     case contentType
     case accept
 

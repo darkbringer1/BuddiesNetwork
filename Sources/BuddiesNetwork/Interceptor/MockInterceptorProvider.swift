@@ -12,7 +12,7 @@ public final class MockInterceptorProvider: InterceptorProvider {
     }
 
     public final class MockInterceptor: Interceptor {
-        public var id: String = UUID().uuidString
+        public let id: String = UUID().uuidString
 
         private let responseDelaySeconds: ClosedRange<Int>
 
@@ -61,7 +61,7 @@ public final class MockInterceptorProvider: InterceptorProvider {
                 return
             }
 
-            let mockResponse = HTTPResponse<Request>(
+            var mockResponse = HTTPResponse<Request>(
                 httpResponse: httpResponse,
                 rawData: Data()
             )

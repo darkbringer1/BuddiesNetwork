@@ -1,6 +1,11 @@
 import Foundation
+import Synchronization
 
-public class MaxRetryInterceptor: Interceptor {
+public final class MaxRetryInterceptor: Interceptor {
+    private struct State {
+        var currentHit = 0
+    }
+
     enum RetryError: Error, LocalizedError {
         case exceedRetryLimit(Int, String)
 
@@ -11,10 +16,10 @@ public class MaxRetryInterceptor: Interceptor {
         }
     }
 
-    public var id: String = UUID().uuidString
+    public let id: String = UUID().uuidString
 
-    private(set) var maxRetry: Int
-    private(set) var currentHit: Int = 0
+    private let maxRetry: Int
+    private let state = Mutex(State())
 
     public init(maxRetry: Int) {
         self.maxRetry = maxRetry
@@ -26,8 +31,14 @@ public class MaxRetryInterceptor: Interceptor {
         response: HTTPResponse<Request>?,
         completion: @escaping HTTPResultHandler<Request>
     ) where Request: Requestable {
-        guard currentHit <= maxRetry else {
-            let error = RetryError.exceedRetryLimit(currentHit, operation.properties.requestName)
+        let hit = state.withLock { state in
+            let hit = state.currentHit
+            state.currentHit += 1
+            return hit
+        }
+
+        guard hit <= maxRetry else {
+            let error = RetryError.exceedRetryLimit(hit, operation.properties.requestName)
 
             chain.handleErrorAsync(
                 error,
@@ -38,8 +49,6 @@ public class MaxRetryInterceptor: Interceptor {
 
             return
         }
-
-        currentHit += 1
 
         chain.proceed(
             operation: operation,
