@@ -1,8 +1,12 @@
 import Foundation
 import Synchronization
 
-public final class URLSessionClient: NSObject, URLSessionDelegate, URLSessionDataDelegate {
+// Delegate callbacks and session lifecycle are synchronized through `state`.
+public final class URLSessionClient: NSObject, Sendable, URLSessionDelegate, URLSessionDataDelegate {
     public typealias Completion = @Sendable (Result<(Data, HTTPURLResponse), any Error>) -> Void
+    public typealias StreamDataHandler = @Sendable (Data) -> Void
+    public typealias StreamResponseValidator = @Sendable (HTTPURLResponse) -> (any Error)?
+    public typealias StreamCompletion = @Sendable (Result<HTTPURLResponse, any Error>) -> Void
 
     private struct State {
         var hasBeenInvalidated = false
@@ -63,6 +67,35 @@ public final class URLSessionClient: NSObject, URLSessionDelegate, URLSessionDat
         return task
     }
 
+    @discardableResult
+    public func sendStreamingRequest(
+        _ request: URLRequest,
+        responseValidator: StreamResponseValidator? = nil,
+        onData: @escaping StreamDataHandler,
+        completion: @escaping StreamCompletion
+    ) -> URLSessionTask? {
+        guard !state.withLock({ $0.hasBeenInvalidated }) else {
+            completion(.failure(URLSessionError.sessionInvalidated))
+            return nil
+        }
+
+        guard let session else {
+            completion(.failure(URLSessionError.sessionInvalidated))
+            return nil
+        }
+
+        let task = session.dataTask(with: request)
+        let taskData = TaskData(
+            streamDataBlock: onData,
+            responseValidator: responseValidator,
+            streamCompletionBlock: completion
+        )
+        state.withLock { $0.tasks[task.taskIdentifier] = taskData }
+
+        task.resume()
+        return task
+    }
+
     public func invalidate() {
         let session = state.withLock {
             $0.hasBeenInvalidated = true
@@ -116,17 +149,15 @@ public final class URLSessionClient: NSObject, URLSessionDelegate, URLSessionDat
         let finalData = taskData.data
         let finalResponse = taskData.response
 
-        let completion = taskData.completionBlock
-
         if let error {
-            completion(.failure(error))
+            taskData.complete(with: .failure(error))
         } else {
             guard let finalResponse else {
-                completion(.failure(URLSessionError.noHttpResponse))
+                taskData.complete(with: .failure(URLSessionError.noHttpResponse))
                 return
             }
 
-            completion(.success((finalData, finalResponse)))
+            taskData.complete(with: .success((finalData, finalResponse)))
         }
     }
 
@@ -137,18 +168,27 @@ public final class URLSessionClient: NSObject, URLSessionDelegate, URLSessionDat
         completionHandler(proposedResponse)
     }
 
-    public func urlSession(_ session: URLSession,
-                         dataTask: URLSessionDataTask,
-                         didReceive response: URLResponse,
-                         completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        defer {
-            completionHandler(.allow)
-        }
-
+    public func urlSession(
+        _ session: URLSession,
+        dataTask: URLSessionDataTask,
+        didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
         guard let taskData = state.withLock({ $0.tasks[dataTask.taskIdentifier] }) else {
+            completionHandler(.allow)
             return
         }
 
         taskData.responseReceived(response: response)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              let validationError = taskData.validationError(for: httpResponse) else {
+            completionHandler(.allow)
+            return
+        }
+
+        taskData.completeStream(with: .failure(validationError))
+        clear(task: dataTask.taskIdentifier)
+        completionHandler(.cancel)
     }
 }

@@ -9,6 +9,7 @@ A lightweight, interceptor-driven HTTP networking library for Swift. It offers a
 - **Strong typing**: Each request declares its expected response `Data` type.
 - **URLSession-backed**: A thin, testable wrapper around `URLSession`.
 - **Encoding helpers**: Automatic URL or JSON encoding of `Encodable` requests.
+- **Server-Sent Events**: Stream `text/event-stream` responses as typed `ServerSentEvent` values.
 
 
 ## Requirements
@@ -100,6 +101,46 @@ let cancellable = client.perform(GetUserRequest(userId: "42")) { result in
 _ = cancellable
 ```
 
+## Server-Sent Events
+
+Use `ServerSentEventsClient` for endpoints that return `text/event-stream`. SSE requests still use the existing `Requestable` shape so URL, method, headers, and encoding stay consistent with normal HTTP calls.
+
+```swift
+struct EventsRequest: Requestable {
+    struct Data: Decodable, Sendable {}
+
+    func httpProperties() -> HTTPOperation<Self>.HTTPProperties {
+        .init(
+            url: URL(string: "https://api.example.com/v1/events")!,
+            httpMethod: .get
+        )
+    }
+}
+
+let sseClient = ServerSentEventsClient(
+    client: URLSessionClient(sessionConfiguration: .default),
+    additionalHeaders: {
+        ["Authorization": "Bearer \(accessToken)"]
+    }
+)
+
+for try await event in sseClient.events(for: EventsRequest()) {
+    print(event.id, event.event, event.data)
+}
+```
+
+The client automatically sends `accept: text/event-stream`, validates `2xx` responses by default, parses standard SSE fields (`id`, `event`, `data`, `retry`), and supports callback-style consumption:
+
+```swift
+let cancellable = sseClient.connect(EventsRequest()) { event in
+    print(event.data)
+} completion: { result in
+    print(result)
+}
+
+_ = cancellable
+```
+
 
 ## Architecture
 
@@ -111,6 +152,7 @@ _ = cancellable
 - `Requestable`: A `Sendable` request model (`Encodable`) with an associated `Data: Decodable & Sendable` response.
 - `HTTPOperation`: Holds request metadata (URL, method, headers, payload) and cache policy, with mutable headers synchronized for interceptor use.
 - `HTTPResponse`: A Sendable value type containing the raw `HTTPURLResponse`, raw `Data`, and decoded `parsedData`.
+- `ServerSentEventsClient`: Streaming facade for SSE endpoints. It reuses `Requestable`/`HTTPOperation` request construction and receives incremental chunks through `URLSessionClient`.
 
 Default interceptor pipeline provided by `DefaultInterceptorProvider`:
 1. `MaxRetryInterceptor(maxRetry: 3)`
