@@ -38,15 +38,20 @@ public typealias HTTPResultHandler<Request: Requestable> = @Sendable (Result<HTT
 public final class APIClient: Sendable {
     public let networkTransporter: any NetworkTransportProtocol
     public let serverSentEventsClient: ServerSentEventsClient
+    public let webSocketClient: WebSocketClient
 
     public init(
         networkTransporter: any NetworkTransportProtocol,
         serverSentEventsClient: ServerSentEventsClient = ServerSentEventsClient(
             client: URLSessionClient(sessionConfiguration: .default)
+        ),
+        webSocketClient: WebSocketClient = WebSocketClient(
+            client: URLSessionClient(sessionConfiguration: .default)
         )
     ) {
         self.networkTransporter = networkTransporter
         self.serverSentEventsClient = serverSentEventsClient
+        self.webSocketClient = webSocketClient
     }
 
     convenience init() {
@@ -54,10 +59,12 @@ public final class APIClient: Sendable {
         let provider = DefaultInterceptorProvider(client: client)
         let transporter = DefaultRequestChainNetworkTransport(interceptorProvider: provider)
         let serverSentEventsClient = ServerSentEventsClient(client: client)
+        let webSocketClient = WebSocketClient(client: client)
 
         self.init(
             networkTransporter: transporter,
-            serverSentEventsClient: serverSentEventsClient
+            serverSentEventsClient: serverSentEventsClient,
+            webSocketClient: webSocketClient
         )
     }
 
@@ -123,6 +130,37 @@ public final class APIClient: Sendable {
             for: request,
             cachePolicy: cachePolicy,
             dispatchQueue: dispatchQueue
+        )
+    }
+
+    public func webSocketConnection<Request: Requestable>(
+        for request: Request,
+        cachePolicy: CachePolicy = .fetchIgnoringCacheCompletely,
+        bufferingPolicy: WebSocketBufferingPolicy = .bufferingNewest(100)
+    ) throws -> WebSocketConnection {
+        try webSocketClient.connection(
+            for: request,
+            cachePolicy: cachePolicy,
+            bufferingPolicy: bufferingPolicy
+        )
+    }
+
+    @discardableResult
+    public func connectWebSocket<Request: Requestable>(
+        _ request: Request,
+        cachePolicy: CachePolicy = .fetchIgnoringCacheCompletely,
+        bufferingPolicy: WebSocketBufferingPolicy = .bufferingNewest(100),
+        dispatchQueue: DispatchQueue = .main,
+        onMessage: @escaping WebSocketMessageHandler,
+        completion: @escaping WebSocketCompletion = { _ in }
+    ) -> WebSocketConnection? {
+        webSocketClient.connect(
+            request,
+            cachePolicy: cachePolicy,
+            bufferingPolicy: bufferingPolicy,
+            dispatchQueue: dispatchQueue,
+            onMessage: onMessage,
+            completion: completion
         )
     }
 }

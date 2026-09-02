@@ -10,6 +10,7 @@ A lightweight, interceptor-driven HTTP networking library for Swift. It offers a
 - **URLSession-backed**: A thin, testable wrapper around `URLSession`.
 - **Encoding helpers**: Automatic URL or JSON encoding of `Encodable` requests.
 - **Server-Sent Events**: Stream `text/event-stream` responses as typed `ServerSentEvent` values.
+- **WebSockets**: Open bidirectional connections with async streams or callbacks, text/binary messages, ping, and close support.
 
 
 ## Requirements
@@ -154,6 +155,77 @@ let cancellable = apiClient.connectServerSentEvents(EventsRequest()) { event in
 _ = cancellable
 ```
 
+## WebSockets
+
+WebSocket handshakes reuse `Requestable` and `URLProvider`, so endpoint URLs, request headers, query encoding, and dynamically supplied authentication headers follow the same path as HTTP and SSE requests.
+
+```swift
+struct ChatSocketRequest: Requestable {
+    struct Data: Decodable, Sendable {}
+
+    func httpProperties() -> HTTPOperation<Self>.HTTPProperties {
+        .init(
+            url: URL(string: "wss://api.example.com/v1/chat")!,
+            httpMethod: .get,
+            additionalHeaders: ["Sec-WebSocket-Protocol": "chat.v1"]
+        )
+    }
+}
+
+let webSocketClient = WebSocketClient(
+    client: URLSessionClient(sessionConfiguration: .default),
+    additionalHeaders: {
+        ["Authorization": "Bearer \(accessToken)"]
+    }
+)
+
+let apiClient = APIClient(
+    networkTransporter: transport,
+    webSocketClient: webSocketClient
+)
+let connection = try apiClient.webSocketConnection(
+    for: ChatSocketRequest()
+)
+
+let incomingMessages = Task {
+    for try await message in connection.messages {
+        switch message {
+        case let .text(text):
+            print(text)
+        case let .data(data):
+            print(data)
+        }
+    }
+}
+
+try await connection.send(.text("Hello"))
+try await connection.ping()
+connection.close(code: .normalClosure)
+try await incomingMessages.value
+```
+
+The callback API returns the same `WebSocketConnection`; retain it while the socket should stay open and use it to send or close:
+
+```swift
+let connection = apiClient.connectWebSocket(
+    ChatSocketRequest(),
+    onMessage: { message in
+        print(message)
+    },
+    completion: { result in
+        print(result)
+    }
+)
+
+connection?.send(.text("Hello")) { result in
+    print(result)
+}
+```
+
+Incoming messages use a bounded newest-100 buffer by default. If the consumer falls behind far enough to drop a message, the framework closes the connection with a policy-violation code and fails the stream with `WebSocketError.messageBufferOverflow`. Pass a different `WebSocketBufferingPolicy` when creating the connection if your endpoint needs another limit.
+
+Handshake URLs must use `ws` or `wss`. Normal and going-away closes finish the message stream; other close codes fail it with `WebSocketError.connectionClosed`, preserving the close code and reason.
+
 
 ## Architecture
 
@@ -166,6 +238,9 @@ _ = cancellable
 - `HTTPOperation`: Holds request metadata (URL, method, headers, payload) and cache policy, with mutable headers synchronized for interceptor use.
 - `HTTPResponse`: A Sendable value type containing the raw `HTTPURLResponse`, raw `Data`, and decoded `parsedData`.
 - `ServerSentEventsClient`: Streaming facade for SSE endpoints. It reuses `Requestable`/`HTTPOperation` request construction and receives incremental chunks through `URLSessionClient`.
+- `WebSocketClient`: Builds WebSocket handshakes through `Requestable`/`HTTPOperation` and creates live `WebSocketConnection` values.
+- `WebSocketConnection`: Owns the receive stream, text/binary sends, ping, close state, bounded buffering, and cancellation.
+- `WebSocketTaskProvider`/`WebSocketTaskProtocol`: Injectable URLSession task boundaries for deterministic WebSocket tests.
 
 Default interceptor pipeline provided by `DefaultInterceptorProvider`:
 1. `MaxRetryInterceptor(maxRetry: 3)`
@@ -277,8 +352,10 @@ struct ProviderWithToken: InterceptorProvider {
 - Completion handlers and token providers are `@Sendable`. Authentication unauthorized handlers are `@MainActor @Sendable`.
 - Async/await API:
   - `try await client.perform(request)` returns `Request.Data`.
+  - `try apiClient.webSocketConnection(for:)` returns a connection whose messages are an `AsyncThrowingStream`.
 - Callback API:
   - `client.perform(request, completion:)` yields `Result<HTTPResult<Request>, any Error>`; access `httpResult.data` for the decoded payload.
+  - `apiClient.connectWebSocket(request, onMessage:completion:)` returns a `WebSocketConnection` for sending and cancellation.
 
 
 ## Cache Policy
