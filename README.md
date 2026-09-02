@@ -129,10 +129,23 @@ for try await event in sseClient.events(for: EventsRequest()) {
 }
 ```
 
+You can also make SSE part of your app-facing `APIClient`:
+
+```swift
+let apiClient = APIClient(
+    networkTransporter: transport,
+    serverSentEventsClient: sseClient
+)
+
+for try await event in apiClient.serverSentEvents(for: EventsRequest()) {
+    print(event.data)
+}
+```
+
 The client automatically sends `accept: text/event-stream`, validates `2xx` responses by default, parses standard SSE fields (`id`, `event`, `data`, `retry`), and supports callback-style consumption:
 
 ```swift
-let cancellable = sseClient.connect(EventsRequest()) { event in
+let cancellable = apiClient.connectServerSentEvents(EventsRequest()) { event in
     print(event.data)
 } completion: { result in
     print(result)

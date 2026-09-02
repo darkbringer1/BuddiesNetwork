@@ -94,6 +94,42 @@ final class ServerSentEventsClientTests: XCTestCase {
         }
     }
 
+    func testAPIClientStreamsServerSentEvents() async throws {
+        let url = try XCTUnwrap(URL(string: "https://example.com/events"))
+        ServerSentEventsURLProtocol.setResponse(
+            .init(
+                statusCode: 200,
+                headers: ["Content-Type": "text/event-stream"],
+                chunks: [Data("event: api\ndata: client\n\n".utf8)]
+            )
+        )
+
+        let transport = DefaultRequestChainNetworkTransport(
+            interceptorProvider: MockInterceptorProvider(responseDelaySeconds: 0 ... 0)
+        )
+        let apiClient = APIClient(
+            networkTransporter: transport,
+            serverSentEventsClient: makeClient()
+        )
+
+        var iterator = apiClient.serverSentEvents(
+            for: EventsRequest(url: url),
+            dispatchQueue: DispatchQueue(label: "buddiesnetwork.api.sse.test")
+        ).makeAsyncIterator()
+
+        let event = try await iterator.next()
+
+        XCTAssertEqual(
+            event,
+            ServerSentEvent(
+                event: "api",
+                data: "client"
+            )
+        )
+        let nextEvent = try await iterator.next()
+        XCTAssertNil(nextEvent)
+    }
+
     private func makeClient() -> ServerSentEventsClient {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [ServerSentEventsURLProtocol.self]
