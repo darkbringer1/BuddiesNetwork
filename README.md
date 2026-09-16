@@ -228,7 +228,93 @@ Handshake URLs must use `ws` or `wss`. Normal and going-away closes finish the m
 
 
 ## Architecture
+### Diagram 
+``` mermaid 
+flowchart TD
 
+subgraph group_public["Public API"]
+  node_package["Swift package<br/>module entry<br/>[Package.swift]"]
+  node_api_client["APIClient<br/>public facade<br/>[APIClient.swift]"]
+  node_request_model["Requestable &amp; operation<br/>typed HTTP model<br/>[HTTPRequest.swift]"]
+  node_http_response["HTTPResponse<br/>result model<br/>[HTTPResponse.swift]"]
+end
+
+subgraph group_http["HTTP pipeline"]
+  node_default_transport["Default transport<br/>chain transport"]
+  node_intercept_chain["Network intercept chain<br/>pipeline executor"]
+  node_default_provider["Default interceptor provider<br/>pipeline composition"]
+  node_url_provider["URLProvider<br/>request builder<br/>[URLProvider.swift]"]
+  node_parameter_encoding["Parameter encoding<br/>serialization boundary"]
+  node_urlsession_client["URLSessionClient<br/>Apple transport adapter"]
+  node_authenticated_provider["Authenticated provider<br/>authenticated composition"]
+  node_auth_error_handler["Authentication error handler<br/>failure policy"]
+end
+
+subgraph group_streaming["Streaming"]
+  node_sse_client["SSE client<br/>event-stream client"]
+  node_sse_parser["SSE parser<br/>incremental parser"]
+  node_websocket_connection["WebSocket connection<br/>socket runtime"]
+end
+
+subgraph group_extension["Extension points"]
+  node_interceptor_protocol["Interceptor protocol<br/>pipeline extension<br/>[Interceptor.swift]"]
+  node_mock_provider["Mock interceptor provider<br/>offline composition"]
+  node_websocket_task["WebSocket task protocol<br/>task boundary"]
+end
+
+node_package -->|"exports"| node_api_client
+node_api_client -->|"accepts"| node_request_model
+node_api_client -->|"delegates HTTP"| node_default_transport
+node_default_transport -->|"creates"| node_intercept_chain
+node_default_transport -->|"uses"| node_default_provider
+node_default_provider -->|"supplies ordered stages"| node_intercept_chain
+node_intercept_chain -->|"builds request"| node_url_provider
+node_url_provider -->|"encodes parameters"| node_parameter_encoding
+node_intercept_chain -->|"fetches through"| node_urlsession_client
+node_intercept_chain -->|"completes with"| node_http_response
+node_authenticated_provider -.->|"extends pipeline"| node_default_provider
+node_authenticated_provider -->|"uses on 401"| node_auth_error_handler
+node_interceptor_protocol -.->|"defines stages"| node_default_provider
+node_mock_provider -.->|"injects alternative pipeline"| node_default_transport
+node_sse_client -->|"reuses operation"| node_request_model
+node_sse_client -->|"builds request"| node_url_provider
+node_sse_client -->|"streams through"| node_urlsession_client
+node_sse_client -->|"parses chunks"| node_sse_parser
+node_websocket_connection -->|"reuses handshake construction"| node_url_provider
+node_websocket_connection -->|"abstracts task"| node_websocket_task
+
+click node_package "https://github.com/darkbringer1/buddiesnetwork/blob/main/Package.swift"
+click node_api_client "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/Client/APIClient.swift"
+click node_request_model "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/HTTP/HTTPRequest.swift"
+click node_http_response "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/HTTP/HTTPResponse.swift"
+click node_default_transport "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/Interceptor/DefaultNetworkTransport.swift"
+click node_intercept_chain "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/Interceptor/NetworkInterceptChain.swift"
+click node_default_provider "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/Interceptor/DefaultInterceptorProvider.swift"
+click node_url_provider "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/RequestEncoding/URLProvider.swift"
+click node_parameter_encoding "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/RequestEncoding/ParameterEncoding.swift"
+click node_urlsession_client "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/Client/URLSessionClient.swift"
+click node_authenticated_provider "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/Interceptor/AuthenticatedInterceptorProvider.swift"
+click node_auth_error_handler "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/Interceptor/AuthenticationErrorHandler.swift"
+click node_sse_client "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/SSE/ServerSentEventsClient.swift"
+click node_sse_parser "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/SSE/ServerSentEventParser.swift"
+click node_websocket_connection "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/WebSocket/WebSocketConnection.swift"
+click node_interceptor_protocol "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/Interceptor/Protocols/Interceptor.swift"
+click node_mock_provider "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/Interceptor/MockInterceptorProvider.swift"
+click node_websocket_task "https://github.com/darkbringer1/buddiesnetwork/blob/main/Sources/BuddiesNetwork/WebSocket/WebSocketTaskProtocol.swift"
+
+classDef toneNeutral fill:#f8fafc,stroke:#334155,stroke-width:1.5px,color:#0f172a
+classDef toneBlue fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#172554
+classDef toneAmber fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#78350f
+classDef toneMint fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#14532d
+classDef toneRose fill:#ffe4e6,stroke:#e11d48,stroke-width:1.5px,color:#881337
+classDef toneIndigo fill:#e0e7ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81
+classDef toneTeal fill:#ccfbf1,stroke:#0f766e,stroke-width:1.5px,color:#134e4a
+class node_package,node_api_client,node_request_model,node_http_response toneBlue
+class node_default_transport,node_intercept_chain,node_default_provider,node_url_provider,node_parameter_encoding,node_urlsession_client,node_authenticated_provider,node_auth_error_handler toneAmber
+class node_sse_client,node_sse_parser,node_websocket_connection toneMint
+class node_interceptor_protocol,node_mock_provider,node_websocket_task toneRose
+```
+### Details
 - `APIClient`: High-level facade. Delegates to a `NetworkTransportProtocol` to execute requests.
 - `DefaultRequestChainNetworkTransport`: Implements a chain-of-responsibility request pipeline using `RequestChain`.
 - `RequestChain`/`NetworkInterceptChain`: Drives interceptors, retries, error handling, and completion dispatch.
